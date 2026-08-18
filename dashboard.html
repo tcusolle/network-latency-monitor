@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ISP Latency Monitor</title>
+<style>
+  :root { color-scheme: light dark; }
+  .viz-root {
+    color-scheme: light;
+    --page-plane:     #f9f9f7;
+    --surface-1:      #fcfcfb;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --series-modem:   #2a78d6; /* categorical slot 1 */
+    --series-cf:      #008300; /* categorical slot 2 */
+    --series-google:  #e87ba4; /* categorical slot 3 */
+    --status-good:    #0ca30c;
+    --status-warning: #fab219;
+    --status-critical:#d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --page-plane:     #0d0d0d;
+      --surface-1:      #1a1a19;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --gridline:       #2c2c2a;
+      --baseline:       #383835;
+      --border:         rgba(255,255,255,0.10);
+      --series-modem:   #3987e5;
+      --series-cf:      #008300;
+      --series-google:  #d55181;
+      --status-good:    #0ca30c;
+      --status-warning: #fab219;
+      --status-critical:#e66767;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --page-plane:     #0d0d0d;
+    --surface-1:      #1a1a19;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --gridline:       #2c2c2a;
+    --baseline:       #383835;
+    --border:         rgba(255,255,255,0.10);
+    --series-modem:   #3987e5;
+    --series-cf:      #008300;
+    --series-google:  #d55181;
+    --status-good:    #0ca30c;
+    --status-warning: #fab219;
+    --status-critical:#e66767;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--page-plane);
+    color: var(--text-primary);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .viz-root { max-width: 1180px; margin: 0 auto; padding: 24px 20px 60px; }
+
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+  h1 { font-size: 18px; font-weight: 600; margin: 0; }
+  .sub { color: var(--text-secondary); font-size: 12.5px; }
+  #conn-note { color: var(--text-muted); font-size: 12px; }
+
+  .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
+  .stat-tile {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .stat-tile .tile-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .tile-name { font-weight: 600; font-size: 13px; }
+  .status-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+  .status-badge .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .status-good     { color: var(--status-good); }
+  .status-warning   { color: #8a6200; }
+  .status-critical  { color: var(--status-critical); }
+  @media (prefers-color-scheme: dark) { .status-warning { color: var(--status-warning); } }
+  :root[data-theme="dark"] .status-warning { color: var(--status-warning); }
+  .status-badge .dot.good { background: var(--status-good); }
+  .status-badge .dot.warning { background: var(--status-warning); }
+  .status-badge .dot.critical { background: var(--status-critical); }
+  .tile-metrics { display: flex; gap: 16px; }
+  .metric .v { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .metric .l { font-size: 11px; color: var(--text-muted); }
+
+  .status-legend { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; padding: 0 2px; flex-wrap: wrap; }
+  .status-legend .item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+  .status-legend .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .status-legend .dot.good { background: var(--status-good); }
+  .status-legend .dot.warning { background: var(--status-warning); }
+  .status-legend .dot.critical { background: var(--status-critical); }
+  .status-legend .crit-label { color: var(--text-primary); font-weight: 600; }
+  .status-legend .desc { color: var(--text-muted); }
+
+  .filter-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .preset-btn, .tool-btn {
+    background: var(--surface-1); color: var(--text-secondary); border: 1px solid var(--border);
+    border-radius: 7px; padding: 5px 11px; font-size: 12.5px; cursor: pointer;
+  }
+  .preset-btn:hover, .tool-btn:hover { color: var(--text-primary); }
+  .preset-btn.active { color: var(--text-primary); border-color: var(--text-primary); font-weight: 600; }
+  .filter-spacer { flex: 1; }
+  #reset-zoom { display: none; }
+  #reset-zoom.visible { display: inline-block; }
+
+  .chart-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 12px 8px 6px; }
+  #chart-wrap { width: 100%; overflow: hidden; }
+  svg#chart { width: 100%; height: 420px; display: block; touch-action: none; }
+  .gridline { stroke: var(--gridline); stroke-width: 1; }
+  .baseline { stroke: var(--baseline); stroke-width: 1; }
+  .refline { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 3 4; }
+  .axis-label { fill: var(--text-muted); font-size: 10.5px; }
+  .refline-label { fill: var(--text-muted); font-size: 10px; }
+  .series-line { fill: none; stroke-width: 2; }
+  .loss-tick { }
+  .crosshair-line { stroke: var(--text-secondary); stroke-width: 1; pointer-events: none; }
+  .zoom-rect { fill: var(--text-primary); opacity: 0.08; pointer-events: none; }
+
+  .legend { display: flex; gap: 18px; align-items: center; padding: 6px 10px 10px; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-secondary); cursor: pointer; user-select: none; }
+  .legend-item.dim { opacity: 0.35; }
+  .legend-item .key { width: 16px; height: 2px; border-radius: 1px; flex: none; }
+
+  #tooltip {
+    position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+    display: none; z-index: 10; min-width: 150px;
+  }
+  #tooltip .tt-time { color: var(--text-muted); font-size: 11px; margin-bottom: 5px; }
+  #tooltip .tt-row { display: flex; align-items: center; gap: 6px; justify-content: space-between; margin: 2px 0; }
+  #tooltip .tt-row .k { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+  #tooltip .tt-row .key { width: 10px; height: 2px; border-radius: 1px; flex: none; }
+  #tooltip .tt-row .v { font-variant-numeric: tabular-nums; font-weight: 600; }
+
+  .table-card { margin-top: 16px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 4px 0; display: none; }
+  .table-card.visible { display: block; }
+  .table-scroll { max-height: 420px; overflow: auto; }
+  table.data { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.data th, table.data td { text-align: left; padding: 6px 12px; white-space: nowrap; }
+  table.data th { position: sticky; top: 0; background: var(--surface-1); color: var(--text-muted); font-weight: 600; border-bottom: 1px solid var(--border); }
+  table.data td { border-bottom: 1px solid var(--gridline); font-variant-numeric: tabular-nums; }
+  table.data .note { padding: 8px 12px; color: var(--text-muted); }
+
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="viz-root" id="app">
+
+  <header>
+    <div>
+      <h1>ISP Latency Monitor</h1>
+      <div class="sub">Modem first hop vs. external anchors &mdash; live from <code>latency.db</code></div>
+    </div>
+    <div id="conn-note">connecting&hellip;</div>
+  </header>
+
+  <div class="stats-row" id="stats-row">
+    <!-- stat tiles injected by app.js -->
+  </div>
+
+  <div class="status-legend" id="status-legend">
+    <!-- threshold key injected by app.js, sourced from classifyStatus() -->
+  </div>
+
+  <div class="filter-row">
+    <button class="preset-btn" data-preset="15">15 min</button>
+    <button class="preset-btn" data-preset="60">1 hour</button>
+    <button class="preset-btn" data-preset="360">6 hours</button>
+    <button class="preset-btn active" data-preset="1440">24 hours</button>
+    <button class="preset-btn" data-preset="0">All</button>
+    <button class="tool-btn" id="reset-zoom">Reset zoom</button>
+    <div class="filter-spacer"></div>
+    <button class="tool-btn" id="toggle-table">View as table</button>
+  </div>
+
+  <div class="chart-card">
+    <div id="chart-wrap">
+      <svg id="chart" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <div class="table-card" id="table-card">
+    <div class="table-scroll">
+      <table class="data" id="data-table">
+        <thead>
+          <tr><th>Time</th><th>Modem (first hop)</th><th>Cloudflare</th><th>Google DNS</th></tr>
+        </thead>
+        <tbody id="data-table-body"></tbody>
+      </table>
+    </div>
+    <div class="note" id="table-note"></div>
+  </div>
+
+  <div id="tooltip"></div>
+
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
