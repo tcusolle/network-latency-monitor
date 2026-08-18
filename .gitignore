@@ -1,0 +1,10 @@
+latency.db
+latency.db-wal
+latency.db-shm
+*.out
+__pycache__/
+.DS_Store
+report/
+*.csv
+*.pdf
+*.log
